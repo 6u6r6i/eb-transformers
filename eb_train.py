@@ -18,7 +18,7 @@ import torch
 import tqdm
 import torch.nn.functional as F
 from eb_transformer import EBTransformer
-from gen_priors import DirichletProcess, RandMultinomial, NeuralPrior, ExponentialPrior
+from gen_priors import DirichletProcess, RandMultinomial, NeuralPrior, ExponentialPrior, GoodTuringPrior
 from channels import slcp_channel, slcp_mle, two_moons_channel, inv_kinematrics_channel
 from gen_priors import Multinomial
 from algo_helpers import eval_regfunc_poisson
@@ -109,6 +109,13 @@ def get_batch(args, return_prior=False):
     
     elif args.prior == "exponential":
         prior = ExponentialPrior(args)
+        thetas = prior.gen_thetas()
+
+    elif args.prior == "goodturing":
+        # The (k, n) alphabet-estimation setting: k is fixed via --seqlen,
+        # n via --n_samples. See gen_priors.GoodTuringPrior.
+        assert args.n_samples is not None, "n_samples must be set for the goodturing prior"
+        prior = GoodTuringPrior(args)
         thetas = prior.gen_thetas()
 
     elif args.prior == "mixture":
@@ -261,7 +268,7 @@ def train(args, model=None):
         norm_type = 2
         total_norm = torch.norm(
             torch.stack(
-                [torch.norm(p.grad.detach(), norm_type) for p in model.parameters()]
+                [torch.norm(p.grad.detach(), norm_type) for p in model.parameters() if p.grad is not None]
             ),
             norm_type,
         )
@@ -387,7 +394,7 @@ def train_getbayes(args, model=None):
         norm_type = 2
         total_norm = torch.norm(
             torch.stack(
-                [torch.norm(p.grad.detach(), norm_type) for p in model.parameters()]
+                [torch.norm(p.grad.detach(), norm_type) for p in model.parameters() if p.grad is not None]
             ),
             norm_type,
         )
@@ -483,6 +490,13 @@ if __name__ == "__main__":
         default="batch",
         help="how should the mixture be dealt with",
     )
+    # For --prior goodturing: k is --seqlen (already above), n is n_samples.
+    parser.add_argument(
+        "--n_samples", type=float, default=None, help="n in the (k, n) Good-Turing/alphabet-estimation setting (goodturing prior only)"
+    )
+    parser.add_argument(
+        "--gt_alpha", type=float, default=1.0, help="symmetric Dirichlet concentration over the k-simplex for the goodturing prior (small = sparse/Zipf-like, large = near-uniform)"
+    )
     # Let's also add randomness for thetamax.
     parser.add_argument(
         "--theta_max_israndom", action="store_true", help="are thetamax random?"
@@ -524,6 +538,14 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--attn_only", action="store_true", help = "Do we want MLP in between"
+    )
+    # Sparse top-1 Mixture-of-Experts MLP (Switch Transformer style); see
+    # src/eb_transformer/moe.py. 0 (default) keeps the original dense MLP.
+    parser.add_argument(
+        "--moe_experts", type=int, default=0, help="Number of MoE experts for the MLP block (0 = dense MLP, no MoE)"
+    )
+    parser.add_argument(
+        "--moe_aux_loss_coef", type=float, default=0.01, help="Weight of the MoE load-balancing auxiliary loss"
     )
 
     parser.add_argument(

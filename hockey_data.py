@@ -12,7 +12,7 @@ from eb_transformer import EBTransformer
 import time
 from utils import load_model_dict
 from algo_helpers import robbins, erm, npmle, fixed_grid_npmle
-from mlp import MLP
+# from mlp import MLP  # module not present in this repo; MLP baseline is unused below
 
 os.environ['TABPFN_ALLOW_CPU_LARGE_DATASET'] = '1'
 

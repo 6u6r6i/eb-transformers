@@ -3,7 +3,8 @@ import tqdm
 from .custom_transformer import MyMultiHeadAttention
 # from linformer import LinformerSelfAttention
 from .temp_mha import TempMHA
-# import .avg_dot_product
+from .moe import MoEFeedForward
+from . import avg_dot_product
 
 class EBTransformer(torch.nn.Module):
     def __init__(self, args):
@@ -54,9 +55,23 @@ class EBTransformer(torch.nn.Module):
         
 
         # If weight sharing is N > 0, then we have N of the different weights.
-        # TODO: check how to do it for the case we want to have MLP for one of the two layers. 
-        if not self.attn_only:
-            # This is for the case we want to keep MLP. 
+        # TODO: check how to do it for the case we want to have MLP for one of the two layers.
+        # MoE (--moe_experts > 0) replaces the dense MLP block below with a
+        # sparse top-1 mixture of smaller FFNs; see src/eb_transformer/moe.py.
+        self.use_moe = (not self.attn_only) and ("moe_experts" in args) and bool(args.moe_experts) and args.moe_experts > 0
+        self.last_moe_aux_loss = None
+        if self.use_moe:
+            self.moe_ff = torch.nn.ModuleList(
+                [
+                    MoEFeedForward(
+                        args.dmodel, 4 * args.dmodel, args.moe_experts,
+                        activation=args.activation, **factory_kwargs,
+                    )
+                    for _ in range(self.num_different_weights)
+                ]
+            )
+        elif not self.attn_only:
+            # This is for the case we want to keep MLP.
             self.linear1 = torch.nn.ModuleList(
                 [
                     torch.nn.Linear(args.dmodel, 4 * args.dmodel, **factory_kwargs)
@@ -198,6 +213,7 @@ class EBTransformer(torch.nn.Module):
                 #"out": [self.decoder(emb)],
             }
 
+        moe_aux_losses = [] if self.use_moe else None
         for i in range(self.args.layers):
             idx = (
                 int((i * self.num_different_weights) // self.args.layers)
@@ -250,9 +266,13 @@ class EBTransformer(torch.nn.Module):
             
             attn_only = self.args.attn_only if "attn_only" in self.args else self.attn_only
             if not attn_only:
-                tmp_ff1 = self.linear1[idx](tmp)
-                tmp_ff2 = self.activation(tmp_ff1)
-                tmp_ff3 = self.linear2[idx](tmp_ff2)
+                if self.use_moe:
+                    tmp_ff3 = self.moe_ff[idx](tmp)
+                    moe_aux_losses.append(self.moe_ff[idx].last_aux_loss)
+                else:
+                    tmp_ff1 = self.linear1[idx](tmp)
+                    tmp_ff2 = self.activation(tmp_ff1)
+                    tmp_ff3 = self.linear2[idx](tmp_ff2)
             else:
                 tmp_ff3 = tmp
             emb = emb + tmp_ff3 * self.args.step
@@ -261,6 +281,9 @@ class EBTransformer(torch.nn.Module):
                 all_activations["activations"].append(emb)
                 all_activations["mlp_step"].append(tmp_ff3 * self.args.step)
                 all_activations["attn_step"].append(tmp * self.args.step)
+
+        if self.use_moe:
+            self.last_moe_aux_loss = torch.stack(moe_aux_losses).mean() if moe_aux_losses else None
 
         if self.args.decoding_layer_norm:
             emb = self.norm3(emb)
@@ -291,6 +314,9 @@ class EBTransformer(torch.nn.Module):
         """
         out = self.forward(inputs, num_padding = num_padding)
         loss = ((out - labels) ** 2).sum() / inputs.numel()
+        if self.use_moe and self.last_moe_aux_loss is not None:
+            aux_coef = self.args.moe_aux_loss_coef if "moe_aux_loss_coef" in self.args else 0.01
+            loss = loss + aux_coef * self.last_moe_aux_loss
         return loss
 
     def get_activations(self, inputs):
@@ -319,9 +345,12 @@ class EBTransformer(torch.nn.Module):
                 tmp = self.norm2(emb)
             else:
                 tmp = self.norm2[idx](emb)
-            tmp_ff1 = self.linear1[idx](tmp)
-            tmp_ff2 = self.activation(tmp_ff1)
-            tmp_ff3 = self.linear2[idx](tmp_ff2)
+            if self.use_moe:
+                tmp_ff3 = self.moe_ff[idx](tmp)
+            else:
+                tmp_ff1 = self.linear1[idx](tmp)
+                tmp_ff2 = self.activation(tmp_ff1)
+                tmp_ff3 = self.linear2[idx](tmp_ff2)
             emb = emb + tmp_ff3 * self.args.step
             steps.append(tmp_ff3 * self.args.step)
             activations.append(emb)
@@ -381,9 +410,12 @@ class EBTransformer(torch.nn.Module):
                 tmp = self.norm2(emb)
             else:
                 tmp = self.norm2[idx](emb)
-            tmp_ff1 = self.linear1[idx](tmp)
-            tmp_ff2 = self.activation(tmp_ff1)
-            tmp_ff3 = self.linear2[idx](tmp_ff2)
+            if self.use_moe:
+                tmp_ff3 = self.moe_ff[idx](tmp)
+            else:
+                tmp_ff1 = self.linear1[idx](tmp)
+                tmp_ff2 = self.activation(tmp_ff1)
+                tmp_ff3 = self.linear2[idx](tmp_ff2)
             mlp_step = tmp_ff3 * self.args.step
 
             names.append(f"mlp_{i + 1}")
@@ -433,7 +465,10 @@ class EBTransformerTruncate(EBTransformer):
             if "no_postnorm" not in self.args or not self.args.no_postnorm:
                 for i in range(self.num_different_weights):
                     self.norm2[i].load_state_dict(base_model.norm2[i].state_dict())
-        if not self.attn_only:
+        if self.use_moe:
+            for i in range(self.num_different_weights):
+                self.moe_ff[i].load_state_dict(base_model.moe_ff[i].state_dict())
+        elif not self.attn_only:
             for i in range(self.num_different_weights):
                 self.linear1[i].load_state_dict(base_model.linear1[i].state_dict())
                 self.linear2[i].load_state_dict(base_model.linear2[i].state_dict())

@@ -476,7 +476,42 @@ class RandMultinomial(Multinomial):
         del args.atoms
         del args.probs
 
-# For bookcorpus purpose: zipf law. 
+# Classical (k, n) alphabet-estimation setting (Good-Turing / missing-mass
+# literature, e.g. Han et al.): fixes k = seqlen symbols, draws ONE
+# probability vector p over those k symbols per row of the batch (from a
+# symmetric Dirichlet -- small gt_alpha gives a sparse/Zipf-like shape, large
+# gt_alpha gives near-uniform), then scales by n_samples so each row's thetas
+# sum to ~n. Under Poissonization this is exactly that classical setting,
+# reusing the existing Poisson channel unchanged: theta_i ~= n * p_i, and
+# X_i ~ Poisson(theta_i) is the Poissonized count of symbol i.
+class GoodTuringPrior(BasePrior):
+    def __init__(self, args):
+        super(GoodTuringPrior, self).__init__()
+        self.args = args
+        self.k = args.seqlen
+        self.n_samples = args.n_samples
+        self.gt_alpha = args.gt_alpha
+
+    def gen_thetas(self, seed=None):
+        args = self.args
+        if seed is not None:
+            torch.manual_seed(seed)
+            torch.cuda.manual_seed(seed)
+        self.dinput = args.dinput
+        self.dlabel = args.dinput if args.channel in ["gaussian", "poisson"] else args.dlabel
+        concentration = self.gt_alpha * torch.ones(self.k).to(args.device)
+        p = torch.distributions.Dirichlet(concentration).sample((args.batch,))  # batch x k
+        thetas = (self.n_samples * p).unsqueeze(-1).to(args.device)  # batch x k x 1
+        return thetas
+
+    def gen_bayes_est(self, inputs, channel="poisson"):
+        raise NotImplementedError(
+            "No closed-form Bayes estimator for GoodTuringPrior (p varies per row); "
+            "use robbins / fixed_grid_npmle / the trained model as EB baselines instead."
+        )
+
+
+# For bookcorpus purpose: zipf law.
 class ZipfPrior(Multinomial):
     def __init__(self, args):
         self.args = args

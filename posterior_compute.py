@@ -7,7 +7,7 @@ import os
 import sys
 import pickle
 
-from algo_helpers import poison_eb_npmle_prior, eval_regfunc
+from algo_helpers import eb_npmle_prior
 
 def get_posterior_from_x(x_all):
     """
@@ -19,7 +19,7 @@ def get_posterior_from_x(x_all):
     marg_ = []
     margnext_ = []  
     for x in x_all:
-        pi, grid = poison_eb_npmle_prior(x.flatten())
+        pi, grid = eb_npmle_prior(x.flatten(), channel="poisson")
         # Now need to get the posterior density. 
 
         grid_poisson = torch.distributions.poisson.Poisson(rate = grid)

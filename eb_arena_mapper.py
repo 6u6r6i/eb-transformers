@@ -12,10 +12,10 @@ import copy
 from eb_transformer import EBTransformer, custom_transformer
 from eb_transformer.temp_mha import TempMHA,  convert_model_mha_to_temp
 from eb_train import get_n_params
-from baselines_code.mlp import MLP
+# from baselines_code.mlp import MLP  # module not present in this repo; MLP baseline is unused below
 from gen_priors import NeuralPrior, DirichletProcess, WorstPrior
 import random
-from algo_helpers import robbins, erm_helper, erm, fixed_grid_npmle, eval_regfunc, npmle, james_stein, f_geb_est
+from algo_helpers import robbins, erm_helper, erm, fixed_grid_npmle, eval_regfunc_poisson, npmle, james_stein, f_geb_est
 import sys
 import time
 from utils import set_seed, load_model_dict, convert_tensor_to_bincount, model_input_bincounts
@@ -126,7 +126,7 @@ def get_batch_loss(model, args):
         save_file = "worst_priors/theta50_seed19.npz" # Might be worth passing in as prior? 
         lst = np.load(save_file)
         atoms, probs = torch.from_numpy(lst['atoms']).to(args.device), torch.from_numpy(lst['probs']).to(args.device)
-        outputs = eval_regfunc(atoms, probs, inputs.flatten()).reshape(inputs.shape)
+        outputs = eval_regfunc_poisson(atoms, probs, inputs.flatten()).reshape(inputs.shape)
         inference_time = None
     else:
         if args.prior_fit:
