@@ -9,12 +9,11 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "${SCRIPT_DIR}/config.sh"
 
-# :ro here (vs :rw in setup_env.sh) -- multiple array-job tasks may read this
-# overlay concurrently; only the one-time install should ever write to it.
-# --bind "$HOME" because this site's Apptainer doesn't auto-bind it (see
-# setup_env.sh); the project (and $SLURM_SUBMIT_DIR) lives under $HOME.
+# --bind "$HOME" and "/scratch" because this site's Apptainer doesn't
+# auto-bind either (see setup_env.sh / config.sh); the project (and
+# $SLURM_SUBMIT_DIR) lives under $HOME, the conda env under $SCRATCH.
 singularity exec --nv \
     --bind "${HOME}:${HOME}" \
-    --overlay "${ENV_DIR}/${OVERLAY_NAME}:ro" \
+    --bind "/scratch:/scratch" \
     "${SIF_IMAGE}" \
-    bash -c "source /ext3/env.sh && cd ${SLURM_SUBMIT_DIR:-$PWD} && $*"
+    bash -c "source ${ENV_DIR}/env.sh && cd ${SLURM_SUBMIT_DIR:-$PWD} && $*"

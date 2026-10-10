@@ -3,11 +3,17 @@
 # cluster (Greene was retired Spring 2026; this replaces the old Greene paths).
 # Sourced by setup_env.sh and run_in_env.sh -- don't run this file directly.
 
-# ENV_DIR / OVERLAY_NAME follow NYU HPC's standard Apptainer+overlay recipe
-# for conda environments (https://services.rt.nyu.edu/docs/hpc/containers/singularity_with_conda/).
+# NYU's documented recipe (https://services.rt.nyu.edu/docs/hpc/containers/singularity_with_conda/)
+# puts the conda env inside an Apptainer --fakeroot overlay image, to avoid
+# burning through $SCRATCH's inode quota if many users each did this.
+# On-cluster testing (2026-10-10) found that --fakeroot + fuse-overlayfs +
+# squashfuse is drastically slow for installs with many small files (a
+# Miniconda install's `rm -rf` alone ran 5+ minutes at ~0% CPU) -- plausibly
+# what actually caused an earlier run to sit for ~20 hours, not a true hang.
+# We install straight onto $SCRATCH instead: no --fakeroot, no overlay, real
+# filesystem I/O. One user's one conda env (tens of thousands of files) is
+# nowhere near $SCRATCH's 5,000,000-inode quota, so this trade is fine here.
 ENV_DIR="/scratch/${USER}/eb-transformers-env"
-OVERLAY_NAME="overlay-15GB-500K.ext3"
-OVERLAY_SRC="/share/apps/overlay-fs-ext3/${OVERLAY_NAME}.gz"
 
 # Auto-pick the newest CUDA "devel" Apptainer/Singularity image NYU publishes,
 # since the exact filename changes as NYU HPC updates these. If this comes up
