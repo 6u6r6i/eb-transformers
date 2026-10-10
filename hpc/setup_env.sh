@@ -30,7 +30,11 @@ fi
 echo "Using image: ${SIF_IMAGE}"
 echo "Installing Miniconda + Python deps inside the overlay (a few minutes)..."
 # --fakeroot is required by Torch's Apptainer for :rw overlay mounts.
+# --bind "$HOME" is required because this site's Apptainer does NOT auto-bind
+# $HOME into the container (confirmed: container_install.sh otherwise isn't
+# visible inside, even though it's right there on the host).
 singularity exec --nv --fakeroot \
+    --bind "${HOME}:${HOME}" \
     --overlay "${ENV_DIR}/${OVERLAY_NAME}:rw" \
     "${SIF_IMAGE}" \
     bash "${SCRIPT_DIR}/container_install.sh"

@@ -11,7 +11,10 @@ source "${SCRIPT_DIR}/config.sh"
 
 # :ro here (vs :rw in setup_env.sh) -- multiple array-job tasks may read this
 # overlay concurrently; only the one-time install should ever write to it.
+# --bind "$HOME" because this site's Apptainer doesn't auto-bind it (see
+# setup_env.sh); the project (and $SLURM_SUBMIT_DIR) lives under $HOME.
 singularity exec --nv \
+    --bind "${HOME}:${HOME}" \
     --overlay "${ENV_DIR}/${OVERLAY_NAME}:ro" \
     "${SIF_IMAGE}" \
     bash -c "source /ext3/env.sh && cd ${SLURM_SUBMIT_DIR:-$PWD} && $*"
