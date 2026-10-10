@@ -23,20 +23,19 @@ set -euo pipefail
 cd "${SLURM_SUBMIT_DIR}"
 mkdir -p slurm_logs
 
-# Default: plain dense-MLP transformer on the standard neural prior (mirrors
-# eb_train.py's own argparse defaults). Edit freely once iterating.
+# The (k, n) Good-Turing MoE experiment: k fixed via --seqlen, n via
+# --n_samples, MoE enabled via --moe_experts.
 bash hpc/run_in_env.sh python eb_train.py \
     --layers 24 --heads 4 --dmodel 32 \
-    --prior neural --channel poisson \
+    --prior goodturing --seqlen 10000 --n_samples 20000 --gt_alpha 0.3 \
+    --channel poisson --moe_experts 8 --moe_aux_loss_coef 0.01 \
     --train_steps 100000 \
     --save_dir "/scratch/${USER}/eb-transformers-runs"
 
-# The (k, n) Good-Turing MoE ablation this is actually being set up for --
-# k fixed via --seqlen, n via --n_samples, MoE enabled via --moe_experts.
-# Comment out the block above and uncomment this one to run it instead:
+# Plain dense-MLP baseline on the standard neural prior (mirrors eb_train.py's
+# own argparse defaults) -- swap back to this to compare against the above:
 # bash hpc/run_in_env.sh python eb_train.py \
 #     --layers 24 --heads 4 --dmodel 32 \
-#     --prior goodturing --seqlen 10000 --n_samples 20000 --gt_alpha 0.3 \
-#     --channel poisson --moe_experts 8 --moe_aux_loss_coef 0.01 \
+#     --prior neural --channel poisson \
 #     --train_steps 100000 \
 #     --save_dir "/scratch/${USER}/eb-transformers-runs"
