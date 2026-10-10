@@ -16,4 +16,4 @@ singularity exec --nv \
     --bind "${HOME}:${HOME}" \
     --bind "/scratch:/scratch" \
     "${SIF_IMAGE}" \
-    bash -c "source ${ENV_DIR}/env.sh && cd ${SLURM_SUBMIT_DIR:-$PWD} && $*"
+    bash -c "source ${ENV_DIR}/env.sh && cd ${SLURM_SUBMIT_DIR:-$PWD} && export PYTHONPATH=\"\$(pwd)/src:\${PYTHONPATH:-}\" && $*"
