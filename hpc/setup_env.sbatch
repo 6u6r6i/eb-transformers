@@ -10,8 +10,10 @@
 #SBATCH --cpus-per-task=4
 #SBATCH --mem=32GB
 #SBATCH --account=torch_pr_996_cds
-#SBATCH --partition=a100_cds
-#SBATCH --gres=gpu:a100:1
+# No GPU requested -- pip-installing packages doesn't need one, and asking
+# for one just queues behind your group's GPU quota (QOSGrpGRES) for no
+# reason. CPU-only partition queues near-instantly.
+#SBATCH --partition=cpu_short
 
 set -euo pipefail
 cd "${SLURM_SUBMIT_DIR}"
