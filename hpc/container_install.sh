@@ -5,7 +5,12 @@
 # `source /ext3/env.sh` to get the environment back.
 set -euo pipefail
 
-if [ ! -d /ext3/miniconda3 ]; then
+# Check for the actual marker file, not just the directory -- an interrupted
+# install (killed mid-extraction, e.g. a dropped SSH session) can leave a
+# /ext3/miniconda3 directory that exists but is incomplete/broken, which a
+# plain `[ -d ... ]` check would wrongly treat as "already installed".
+if [ ! -f /ext3/miniconda3/etc/profile.d/conda.sh ]; then
+    rm -rf /ext3/miniconda3
     wget -q https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-x86_64.sh -O /tmp/miniconda.sh
     bash /tmp/miniconda.sh -b -p /ext3/miniconda3
     rm /tmp/miniconda.sh
